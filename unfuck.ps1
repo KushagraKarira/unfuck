@@ -6,253 +6,269 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
-# --- [Font Logic] ---
-$GlobalFont = "Inter"
+# --- [Visual Identity & Theme] ---
+$script:Theme = @{
+    Bg          = [System.Drawing.Color]::FromArgb(10, 10, 12)
+    Header      = [System.Drawing.Color]::FromArgb(18, 18, 22)
+    Card        = [System.Drawing.Color]::FromArgb(28, 28, 34)
+    CardHover   = [System.Drawing.Color]::FromArgb(40, 40, 48)
+    Accent      = [System.Drawing.Color]::FromArgb(0, 120, 215) 
+    AccentGlow  = [System.Drawing.Color]::FromArgb(0, 180, 255)
+    Success     = [System.Drawing.Color]::FromArgb(46, 204, 113)
+    Warning     = [System.Drawing.Color]::FromArgb(241, 196, 15)
+    Danger      = [System.Drawing.Color]::FromArgb(231, 76, 60)
+    TextMain    = [System.Drawing.Color]::FromArgb(240, 240, 240)
+    TextMuted   = [System.Drawing.Color]::FromArgb(140, 140, 150)
+    Border      = [System.Drawing.Color]::FromArgb(45, 45, 55)
+}
+
+$GlobalFont = "Segoe UI Variable Display"
 $CheckFont = New-Object System.Drawing.Font($GlobalFont, 10)
 if ($CheckFont.Name -ne $GlobalFont) { $GlobalFont = "Segoe UI" }
 
-# --- [Visual Identity] ---
-$Theme = @{
-    Bg         = [System.Drawing.Color]::FromArgb(15, 15, 15)
-    Card       = [System.Drawing.Color]::FromArgb(25, 25, 25)
-    Sidebar    = [System.Drawing.Color]::FromArgb(20, 20, 20)
-    Accent     = [System.Drawing.Color]::FromArgb(255, 60, 60)
-    Success    = [System.Drawing.Color]::FromArgb(40, 200, 100)
-    Warning    = [System.Drawing.Color]::FromArgb(255, 160, 0)
-    TextMain   = [System.Drawing.Color]::White
-    TextMuted  = [System.Drawing.Color]::FromArgb(160, 160, 160)
-    Terminal   = [System.Drawing.Color]::FromArgb(5, 5, 5)
-}
-
+# --- [Form Setup] ---
 $Form = New-Object System.Windows.Forms.Form
-$Form.Text = "UNFUCK | High-Performance Restoration"
-$Form.Size = New-Object System.Drawing.Size(1200, 950)
-$Form.BackColor = $Theme.Bg
-$Form.StartPosition = "CenterScreen"
-$Form.FormBorderStyle = "FixedSingle"
+$Form.Text            = "ADMINWORKS"
+$Form.Size            = New-Object System.Drawing.Size(1250, 1050)
+$Form.BackColor       = $script:Theme.Bg
+$Form.StartPosition   = "CenterScreen"
+$Form.FormBorderStyle = "None"
+$Form.MinimumSize     = New-Object System.Drawing.Size(1100, 850)
 
-# --- [Header: System Info] ---
-$Header = New-Object System.Windows.Forms.Panel -Property @{Dock="Top"; Height=80; BackColor=$Theme.Sidebar}
+$prop = $Form.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance, NonPublic")
+if ($prop) { $prop.SetValue($Form, $true, $null) }
+
+# --- [Header: Window Controls & Device Info] ---
+$Header = New-Object System.Windows.Forms.Panel -Property @{Dock="Top"; Height=85; BackColor=$script:Theme.Header}
 $Form.Controls.Add($Header)
 
-$OS = (Get-CimInstance Win32_OperatingSystem)
-$Uptime = (Get-Date) - $OS.LastBootUpTime
-$SysInfo = New-Object System.Windows.Forms.Label -Property @{
-    Text = "SYSTEM: $($env:COMPUTERNAME) | OS: $($OS.Caption) ($($OS.OSArchitecture)) | UPTIME: $($Uptime.Days)d $($Uptime.Hours)h"
-    Location = New-Object System.Drawing.Point(25, 25)
-    Size = New-Object System.Drawing.Size(1100, 30)
-    ForeColor = $Theme.TextMuted
-    Font = New-Object System.Drawing.Font($GlobalFont, 10, [System.Drawing.FontStyle]::Bold)
+$TitleLbl = New-Object System.Windows.Forms.Label -Property @{
+    Text      = "⚡ ADMINWORKS"
+    Location  = New-Object System.Drawing.Point(25, 15); AutoSize = $true
+    ForeColor = $script:Theme.TextMain; Font = New-Object System.Drawing.Font($GlobalFont, 12, [System.Drawing.FontStyle]::Bold)
 }
-$Header.Controls.Add($SysInfo)
+$Header.Controls.Add($TitleLbl)
 
-# --- [Navigation Sidebar] ---
-$Nav = New-Object System.Windows.Forms.TabControl
-$Nav.Size = New-Object System.Drawing.Size(1140, 520)
-$Nav.Location = New-Object System.Drawing.Point(20, 90)
-$Nav.Alignment = "Top"
-$Nav.SizeMode = "Fixed"
-$Nav.ItemSize = New-Object System.Drawing.Size(568, 45)
-$Form.Controls.Add($Nav)
+# Robust IP Fetching
+$LocalIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -eq 'Dhcp' -or $_.PrefixOrigin -eq 'Manual' } | Select-Object -First 1).IPAddress
+if (-not $LocalIP) { $LocalIP = "Scanning..." }
 
-$TabHome  = New-Object System.Windows.Forms.TabPage -Property @{Text="CORE MODIFICATIONS"; BackColor=$Theme.Bg}
-$TabApps  = New-Object System.Windows.Forms.TabPage -Property @{Text="SOFTWARE DEPLOYMENT"; BackColor=$Theme.Bg}
-$Nav.TabPages.AddRange(@($TabHome, $TabApps))
+$OS = (Get-CimInstance Win32_OperatingSystem)
+$SysInfoLbl = New-Object System.Windows.Forms.Label -Property @{
+    Text      = "$($env:COMPUTERNAME) | IP: $LocalIP | $($OS.Caption)"
+    Location  = New-Object System.Drawing.Point(25, 45); Size = New-Object System.Drawing.Size(800, 25)
+    ForeColor = $script:Theme.TextMuted; Font = New-Object System.Drawing.Font($GlobalFont, 8, [System.Drawing.FontStyle]::Bold)
+}
+$Header.Controls.Add($SysInfoLbl)
 
-# --- [Logging Engine] ---
-$LogPanel = New-Object System.Windows.Forms.Panel -Property @{Location=New-Object System.Drawing.Point(20, 620); Size=New-Object System.Drawing.Size(1145, 270); BackColor=$Theme.Terminal}
-$Form.Controls.Add($LogPanel)
+# Live Uptime Label
+$UptimeLbl = New-Object System.Windows.Forms.Label -Property @{
+    Location  = New-Object System.Drawing.Point(850, 45); Size = New-Object System.Drawing.Size(200, 25)
+    ForeColor = $script:Theme.AccentGlow; Font = New-Object System.Drawing.Font($GlobalFont, 8, [System.Drawing.FontStyle]::Bold)
+    TextAlign = "TopRight"; Anchor = "Top, Right"
+}
+$Header.Controls.Add($UptimeLbl)
+
+$CtrlBox = New-Object System.Windows.Forms.Panel -Property @{Dock="Right"; Width=150}
+$Header.Controls.Add($CtrlBox)
+
+function New-WinBtn($Text, $X, $Color, $Action) {
+    $B = New-Object System.Windows.Forms.Button -Property @{
+        Text = $Text; Size = New-Object System.Drawing.Size(40, 32); 
+        Location = New-Object System.Drawing.Point($X, 14); FlatStyle = "Flat"; 
+        ForeColor = $script:Theme.TextMuted; Tag = $Color
+    }
+    $B.FlatAppearance.BorderSize = 0
+    $B.Add_Click($Action)
+    $B.Add_MouseEnter({ $this.BackColor = $this.Tag; $this.ForeColor = [System.Drawing.Color]::White })
+    $B.Add_MouseLeave({ $this.BackColor = [System.Drawing.Color]::Transparent; $this.ForeColor = $script:Theme.TextMuted })
+    $CtrlBox.Controls.Add($B)
+}
+New-WinBtn "✕" 105 $script:Theme.Danger { $Form.Close() }
+New-WinBtn "⬜" 60 $script:Theme.CardHover { if ($Form.WindowState -eq "Maximized") { $Form.WindowState = "Normal" } else { $Form.WindowState = "Maximized" } }
+New-WinBtn "—" 15 $script:Theme.CardHover { $Form.WindowState = "Minimized" }
+
+# --- [Dashboard Area] ---
+$MainArea = New-Object System.Windows.Forms.Panel -Property @{Dock="Fill"; Padding=New-Object System.Windows.Forms.Padding(0)}
+$Form.Controls.Add($MainArea)
+
+$script:DashView = New-Object System.Windows.Forms.Panel -Property @{Dock="Fill"; AutoScroll=$true}
+$MainArea.Controls.Add($script:DashView)
+
+# --- [Terminal] ---
+$LogContainer = New-Object System.Windows.Forms.Panel -Property @{Dock="Bottom"; Height=220; BackColor=$script:Theme.Bg; Padding=New-Object System.Windows.Forms.Padding(30, 10, 30, 30)}
+$Form.Controls.Add($LogContainer)
 
 $LogBox = New-Object System.Windows.Forms.RichTextBox -Property @{
-    Dock = "Fill"
-    BackColor = $Theme.Terminal
-    ForeColor = $Theme.TextMain
-    BorderStyle = "None"
-    ReadOnly = $true
+    Dock = "Fill"; BackColor = [System.Drawing.Color]::FromArgb(5, 5, 5);
+    ForeColor = $script:Theme.TextMain; BorderStyle = "None"; ReadOnly = $true;
     Font = New-Object System.Drawing.Font("Consolas", 10)
 }
-$LogPanel.Controls.Add($LogBox)
-
-# Clear Logs Button
-$BtnClearLog = New-Object System.Windows.Forms.Button -Property @{
-    Text = "CLEAR LOGS"
-    Size = New-Object System.Drawing.Size(100, 25)
-    Location = New-Object System.Drawing.Point(1030, 10)
-    FlatStyle = "Flat"
-    BackColor = $Theme.Sidebar
-    ForeColor = $Theme.TextMuted
-    Font = New-Object System.Drawing.Font($GlobalFont, 7)
-}
-$BtnClearLog.FlatAppearance.BorderSize = 0
-$BtnClearLog.Add_Click({ $LogBox.Clear() })
-$LogPanel.Controls.Add($BtnClearLog)
-$BtnClearLog.BringToFront()
+$LogContainer.Controls.Add($LogBox)
 
 function Write-Log ($Msg, $Type = "Info") {
     $LogBox.Invoke([Action[string, string]]{
         param($m, $t)
         $LogBox.SelectionStart = $LogBox.TextLength
         $LogBox.SelectionColor = switch ($t) {
-            "Success" { $Theme.Success }
-            "Warning" { $Theme.Warning }
-            "Error"   { $Theme.Accent }
-            Default   { $Theme.TextMuted }
+            "Success" { $script:Theme.Success }
+            "Warning" { $script:Theme.Warning }
+            "Error"   { $script:Theme.Danger }
+            Default   { $script:Theme.AccentGlow }
         }
-        $LogBox.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] > $m`n")
+        $LogBox.AppendText("[$((Get-Date).ToString('HH:mm:ss'))] » $m`n")
         $LogBox.ScrollToCaret()
     }, $Msg, $Type)
 }
 
-# --- [Component Factories] ---
-function New-Section ($Title, $X, $Y, $Parent) {
+# --- [Dashboard Layout Engine] ---
+$global:LastY = 20
+$global:Col = 0
+
+function New-Section ($Title) {
+    # If the last row was partially filled, move to next line
+    if ($global:Col -ne 0) {
+        $global:LastY += 140
+        $global:Col = 0
+    }
+    
     $L = New-Object System.Windows.Forms.Label -Property @{
-        Text = $Title.ToUpper()
-        Location = New-Object System.Drawing.Point($X, $Y)
-        Size = New-Object System.Drawing.Size(350, 25)
-        ForeColor = $Theme.Accent
+        Text = $Title.ToUpper(); Location = New-Object System.Drawing.Point(35, $global:LastY);
+        Size = New-Object System.Drawing.Size(900, 30); ForeColor = $script:Theme.TextMuted;
         Font = New-Object System.Drawing.Font($GlobalFont, 9, [System.Drawing.FontStyle]::Bold)
     }
-    $Parent.Controls.Add($L)
+    $script:DashView.Controls.Add($L)
+    $global:LastY += 40
 }
 
-function New-Tweak ($Title, $Desc, $X, $Y, $Action, $Parent) {
-    $P = New-Object System.Windows.Forms.Panel
-    $P.Location = New-Object System.Drawing.Point($X, $Y)
-    $P.Size = New-Object System.Drawing.Size(350, 100)
-    $P.BackColor = $Theme.Card
+function New-Tweak ($Title, $Desc, $Action) {
+    $X = 35 + ($global:Col * 320)
+    $P = New-Object System.Windows.Forms.Panel -Property @{
+        Size = New-Object System.Drawing.Size(305, 125); BackColor = $script:Theme.Card;
+        Location = New-Object System.Drawing.Point($X, $global:LastY)
+    }
     
-    $B = New-Object System.Windows.Forms.Button
-    $B.Text = $Title
-    $B.Dock = "Top"
-    $B.Height = 55
-    $B.FlatStyle = "Flat"
+    $B = New-Object System.Windows.Forms.Button -Property @{
+        Text = $Title; Dock = "Top"; Height = 65; FlatStyle = "Flat"; ForeColor = $script:Theme.TextMain; 
+        Font = New-Object System.Drawing.Font($GlobalFont, 10, [System.Drawing.FontStyle]::Bold); TextAlign = "MiddleLeft";
+        Padding = New-Object System.Windows.Forms.Padding(15, 0, 0, 0)
+    }
     $B.FlatAppearance.BorderSize = 0
-    $B.BackColor = [System.Drawing.Color]::FromArgb(35, 35, 35)
-    $B.ForeColor = $Theme.TextMain
-    $B.Font = New-Object System.Drawing.Font($GlobalFont, 10, [System.Drawing.FontStyle]::Bold)
-    
-    $B.Add_MouseEnter({ $this.BackColor = $Theme.Accent })
-    $B.Add_MouseLeave({ $this.BackColor = [System.Drawing.Color]::FromArgb(35, 35, 35) })
+    $B.Add_MouseEnter({ $this.Parent.BackColor = $script:Theme.CardHover; $this.ForeColor = $script:Theme.AccentGlow })
+    $B.Add_MouseLeave({ $this.Parent.BackColor = $script:Theme.Card; $this.ForeColor = $script:Theme.TextMain })
     $B.Add_Click($Action)
-
-    $L = New-Object System.Windows.Forms.Label
-    $L.Text = $Desc
-    $L.Dock = "Bottom"
-    $L.Height = 40
-    $L.TextAlign = "MiddleCenter"
-    $L.ForeColor = $Theme.TextMuted
-    $L.Font = New-Object System.Drawing.Font($GlobalFont, 8)
-
-    $P.Controls.Add($B)
-    $P.Controls.Add($L)
-    $Parent.Controls.Add($P)
+    
+    $L = New-Object System.Windows.Forms.Label -Property @{
+        Text = $Desc; Dock = "Bottom"; Height = 55; ForeColor = $script:Theme.TextMuted;
+        Font = New-Object System.Drawing.Font($GlobalFont, 8); Padding = New-Object System.Windows.Forms.Padding(15, 0, 10, 0)
+    }
+    $P.Controls.AddRange(@($L, $B))
+    $script:DashView.Controls.Add($P)
+    
+    $global:Col++
+    if ($global:Col -eq 3) {
+        $global:Col = 0
+        $global:LastY += 140
+    }
 }
 
-# --- [TAB 1: CORE TWEAKS] ---
-New-Section "Maintenance & Updates" 20 20 $TabHome
-New-Tweak "Deep Repair" "DISM / SFC Component Fix" 20 50 { 
-    Write-Log "Starting repair sequence..." "Warning"
-    sfc /scannow; dism /online /cleanup-image /restorehealth
-    Write-Log "Integrity check finished." "Success"
-} $TabHome
-
-New-Tweak "Software Update" "Batch WinGet Upgrade" 20 160 { 
-    Write-Log "Syncing Winget repos..." "Warning"
-    winget upgrade --all --silent --accept-package-agreements --accept-source-agreements
-    Write-Log "Software library updated." "Success"
-} $TabHome
-
-New-Tweak "OS Patching" "Force Windows Updates" 20 270 { 
-    Write-Log "Triggering Windows Update..." "Warning"
-    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false | Out-Null
-    if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -SkipPublisherCheck }
+# --- [Populate Tweaks] ---
+New-Section "Maintenance & Repair"
+New-Tweak "Deep Repair" "Executes DISM / SFC restoration cycle." { 
+    Write-Log "Repair started..." "Warning"; sfc /scannow; dism /online /cleanup-image /restorehealth; Write-Log "Integrity verified." "Success" 
+}
+New-Tweak "Software Sync" "Upgrades all installed Winget packages." { 
+    Write-Log "Syncing packages..." "Warning"; winget upgrade --all --silent; Write-Log "Apps synced." "Success" 
+}
+New-Tweak "OS Patching" "Force check and install Windows Updates." { 
+    Write-Log "Checking for Windows Updates..." "Warning"
+    if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { 
+        Write-Log "Installing Windows Update module..." "Info"
+        Install-Module PSWindowsUpdate -Force -SkipPublisherCheck 
+    }
     Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false
-    Write-Log "OS Patching cycle complete." "Success"
-} $TabHome
+    Write-Log "Windows Update cycle complete." "Success"
+}
+New-Tweak "Storage Sweep" "ReTrim SSD and clear system temp files." { 
+    Write-Log "Optimizing storage..." "Warning"; Optimize-Volume -DriveLetter C -ReTrim; cleanmgr /sagerun:1; Write-Log "Cleanup complete." "Success" 
+}
 
-New-Section "Optimization & UI" 390 20 $TabHome
-New-Tweak "Classic Menu" "Win10 Right-Click for Win11" 390 50 { 
-    reg add "HKCU\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32" /f /ve | Out-Null
-    Write-Log "Classic Context Menu Enabled. Restart Explorer to apply." "Success"
-} $TabHome
-
-New-Tweak "Privacy Purge" "Kill Telemetry & Tracking" 390 160 { 
-    Write-Log "Nuking Telemetry..." "Warning"
-    Get-Service -Name "DiagTrack", "dmwappushservice" | Stop-Service -PassThru | Set-Service -StartupType Disabled
-    Write-Log "Telemetry services disabled." "Success"
-} $TabHome
-
-New-Tweak "Gaming Mode" "Zero-Throttle & HAGS" 390 270 { 
+New-Section "Performance & Net"
+New-Tweak "Gaming Mode" "Ultimate Power & Low Latency Menu." { 
     powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 | Out-Null
     Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuShowDelay" -Value 0
-    Write-Log "Ultimate Power & Latency Tweaked." "Success"
-} $TabHome
+    Write-Log "Performance profile active." "Success"
+}
+New-Tweak "TCP Accelerator" "Tuning TCP/IP global stack for LAN." { 
+    netsh int tcp set global autotuninglevel=normal; netsh int tcp set global rss=enabled; netsh int tcp set global fastopen=enabled
+    Write-Log "Network stack optimized." "Success"
+}
+New-Tweak "Cloudflare DNS" "Forces 1.1.1.1 on all active adapters." { 
+    Write-Log "Propagating Cloudflare DNS..." "Warning"
+    Get-NetAdapter | Where { $_.Status -eq "Up" } | ForEach {
+        Set-DnsClientServerAddress -InterfaceAlias $_.Name -ServerAddresses ("1.1.1.1", "1.0.0.1")
+        Set-DnsClientServerAddress -InterfaceAlias $_.Name -ServerAddresses ("2606:4700:4700::1111", "2606:4700:4700::1001") -AddressFamily IPv6
+    }
+    Write-Log "DNS propagation complete." "Success"
+}
 
-New-Section "Advanced Cleanup" 760 20 $TabHome
-New-Tweak "Debloat Start" "Remove OEM Junk Apps" 760 50 { 
+New-Section "Power & Persistence"
+New-Tweak "Kill Hibernation" "Disables Hibernation to free space (GBs)." { 
+    powercfg -h off; Write-Log "Hibernation disabled and file deleted." "Success" 
+}
+New-Tweak "Never Sleep" "Prevents LAN timeout during long tasks." { 
+    powercfg -change -standby-timeout-ac 0; powercfg -change -monitor-timeout-ac 0
+    Write-Log "Power timeouts set to Infinity (AC)." "Success" 
+}
+New-Tweak "Fast Start Toggle" "Disable Fast Startup for clean reboots." { 
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
+    Write-Log "Fast Startup disabled." "Success" 
+}
+
+New-Section "Advanced & Privacy"
+New-Tweak "DB LAN Fix" "SMB/Oplocks for MS Access stability." { 
+    Write-Log "Applying database LAN patch..." "Warning"
+    Set-SmbClientConfiguration -EnableSecuritySignature $false -Force
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name "EnableOplocks" -Value 0
+    Write-Log "Database environment hardened." "Success"
+}
+New-Tweak "OEM Debloat" "Nukes TikTok, Disney, Meta, etc." { 
+    Write-Log "Debloating Start Menu..." "Warning"
     $Apps = @("*TikTok*", "*Instagram*", "*Facebook*", "*Disney*", "*PrimeVideo*")
     foreach ($a in $Apps) { Get-AppxPackage $a | Remove-AppxPackage -ErrorAction SilentlyContinue }
-    Write-Log "Start Menu Debloated." "Success"
-} $TabHome
-
-New-Tweak "Recall Nuclear" "Total AI Feature Removal" 760 160 { 
+    Write-Log "Bloatware purged." "Success"
+}
+New-Tweak "Recall Nuclear" "Total removal of AI Recall feature." { 
+    Write-Log "Removing Recall components..." "Warning"
     Disable-WindowsOptionalFeature -Online -FeatureName "Recall" -Remove -NoRestart
-    Write-Log "AI Recall feature purged." "Success"
-} $TabHome
-
-# --- [TAB 2: APP DEPLOYMENT] ---
-$SearchContainer = New-Object System.Windows.Forms.Panel -Property @{Location=New-Object System.Drawing.Point(25, 25); Size=New-Object System.Drawing.Size(1080, 430); BackColor=$Theme.Card}
-$TabApps.Controls.Add($SearchContainer)
-
-$SearchInput = New-Object System.Windows.Forms.TextBox -Property @{
-    Location=New-Object System.Drawing.Point(15, 15); Size=New-Object System.Drawing.Size(850, 40); BackColor=$Theme.Bg; ForeColor=$Theme.TextMain; BorderStyle="FixedSingle"; Font=New-Object System.Drawing.Font($GlobalFont, 12)
+    Write-Log "AI Tracking feature removed." "Success"
 }
-$SearchContainer.Controls.Add($SearchInput)
 
-$BtnSearch = New-Object System.Windows.Forms.Button -Property @{
-    Text="QUERY REPO"; Location=New-Object System.Drawing.Point(880, 15); Size=New-Object System.Drawing.Size(180, 32); FlatStyle="Flat"; BackColor=$Theme.Accent; ForeColor=$Theme.TextMain; Font=New-Object System.Drawing.Font($GlobalFont, 9, [System.Drawing.FontStyle]::Bold)
-}
-$SearchContainer.Controls.Add($BtnSearch)
+# --- [Resize/Drag Loop] ---
+$global:Dragging = $false; $global:Resizing = $false; $global:MousePos = New-Object System.Drawing.Point
+$Grip = New-Object System.Windows.Forms.Panel -Property @{Size=New-Object System.Drawing.Size(20,20); Cursor="SizeNWSE"; Anchor="Bottom,Right"}
+$Grip.Location = New-Object System.Drawing.Point(($Form.Width - 20), ($Form.Height - 20))
+$Form.Controls.Add($Grip); $Grip.BringToFront()
+$Grip.Add_MouseDown({ $global:Resizing = $true; $global:MousePos = [System.Windows.Forms.Cursor]::Position })
+$Grip.Add_MouseUp({ $global:Resizing = $false })
+$Header.Add_MouseDown({ $global:Dragging = $true; $global:MousePos = $Form.PointToClient([System.Windows.Forms.Cursor]::Position) })
+$Header.Add_MouseUp({ $global:Dragging = $false })
 
-$AppGrid = New-Object System.Windows.Forms.ListView -Property @{
-    Location=New-Object System.Drawing.Point(15, 65); Size=New-Object System.Drawing.Size(1045, 340); BackColor=$Theme.Bg; ForeColor=$Theme.TextMain; BorderStyle="None"; View="Details"; FullRowSelect=$true; CheckBoxes=$true; Font=New-Object System.Drawing.Font($GlobalFont, 10)
-}
-$AppGrid.Columns.Add("Application", 450) | Out-Null
-$AppGrid.Columns.Add("Package ID", 400) | Out-Null
-$AppGrid.Columns.Add("Source", 150) | Out-Null
-$SearchContainer.Controls.Add($AppGrid)
-
-$BtnDeploy = New-Object System.Windows.Forms.Button -Property @{
-    Text="PROVISION SELECTED PACKAGES"; Location=New-Object System.Drawing.Point(25, 470); Size=New-Object System.Drawing.Size(1080, 40); FlatStyle="Flat"; BackColor=$Theme.Success; ForeColor=$Theme.TextMain; Font=New-Object System.Drawing.Font($GlobalFont, 10, [System.Drawing.FontStyle]::Bold)
-}
-$TabApps.Controls.Add($BtnDeploy)
-
-# --- [LOGIC] ---
-$BtnSearch.Add_Click({
-    if ([string]::IsNullOrWhiteSpace($SearchInput.Text)) { return }
-    $AppGrid.Items.Clear()
-    Write-Log "Searching for '$($SearchInput.Text)'..." "Warning"
-    $Raw = winget search $SearchInput.Text --source winget | Select-Object -Skip 2
-    foreach ($L in $Raw) {
-        if ($L -match "^\s*(?<N>.+?)\s+(?<I>\S+)\s+(?<V>\S+)\s+(?<S>\S+)") {
-            $Item = New-Object System.Windows.Forms.ListViewItem($Matches['N'])
-            $Item.SubItems.Add($Matches['I']); $Item.SubItems.Add($Matches['S'])
-            $AppGrid.Items.Add($Item)
-        }
-    }
+$Timer = New-Object System.Windows.Forms.Timer -Property @{Interval=1000; Enabled=$true}
+$Timer.Add_Tick({
+    $Boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+    $Span = (Get-Date) - $Boot
+    $UptimeLbl.Text = "UPTIME: $($Span.Days)d $($Span.Hours)h $($Span.Minutes)m"
 })
 
-$BtnDeploy.Add_Click({
-    $Checked = $AppGrid.CheckedItems
-    if ($Checked.Count -eq 0) { Write-Log "No packages selected." "Warning"; return }
-    foreach ($Item in $Checked) {
-        $ID = $Item.SubItems[1].Text
-        Write-Log "Installing $ID..." "Warning"
-        Start-Process winget -ArgumentList "install --id $ID --silent --accept-package-agreements" -NoNewWindow -Wait
-        Write-Log "Done: $ID" "Success"
+$DragTimer = New-Object System.Windows.Forms.Timer -Property @{Interval=10; Enabled=$true}
+$DragTimer.Add_Tick({
+    if ($global:Dragging) { $Form.Location = [System.Drawing.Point]::Subtract([System.Windows.Forms.Cursor]::Position, $global:MousePos) }
+    if ($global:Resizing) {
+        $CP = [System.Windows.Forms.Cursor]::Position
+        $NewWidth = $CP.X - $Form.Left; $NewHeight = $CP.Y - $Form.Top
+        if ($NewWidth -ge 1000 -and $NewHeight -ge 750) { $Form.Size = New-Object System.Drawing.Size($NewWidth, $NewHeight) }
     }
 })
-
-$SearchInput.Add_KeyDown({ if ($_.KeyCode -eq "Enter") { $BtnSearch.PerformClick() }})
 
 [void]$Form.ShowDialog()
