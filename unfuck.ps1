@@ -106,6 +106,18 @@ $LogBox = New-Object System.Windows.Forms.RichTextBox -Property @{
 }
 $LogContainer.Controls.Add($LogBox)
 
+# Mini Terminal Clear Button
+$BtnClearLog = New-Object System.Windows.Forms.Button -Property @{
+    Text = "CLEAR"; Size = New-Object System.Drawing.Size(60, 22); 
+    Location = New-Object System.Drawing.Point(1160, 10); FlatStyle = "Flat"; 
+    BackColor = $script:Theme.Header; ForeColor = $script:Theme.TextMuted;
+    Font = New-Object System.Drawing.Font($GlobalFont, 7); Anchor = "Bottom, Right"
+}
+$BtnClearLog.FlatAppearance.BorderSize = 0
+$BtnClearLog.Add_Click({ $LogBox.Clear() })
+$LogContainer.Controls.Add($BtnClearLog)
+$BtnClearLog.BringToFront()
+
 function Write-Log ($Msg, $Type = "Info") {
     $LogBox.Invoke([Action[string, string]]{
         param($m, $t)
@@ -126,7 +138,6 @@ $global:LastY = 20
 $global:Col = 0
 
 function New-Section ($Title) {
-    # If the last row was partially filled, move to next line
     if ($global:Col -ne 0) {
         $global:LastY += 140
         $global:Col = 0
@@ -173,6 +184,7 @@ function New-Tweak ($Title, $Desc, $Action) {
 }
 
 # --- [Populate Tweaks] ---
+
 New-Section "Maintenance & Repair"
 New-Tweak "Deep Repair" "Executes DISM / SFC restoration cycle." { 
     Write-Log "Repair started..." "Warning"; sfc /scannow; dism /online /cleanup-image /restorehealth; Write-Log "Integrity verified." "Success" 
@@ -182,26 +194,33 @@ New-Tweak "Software Sync" "Upgrades all installed Winget packages." {
 }
 New-Tweak "OS Patching" "Force check and install Windows Updates." { 
     Write-Log "Checking for Windows Updates..." "Warning"
-    if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { 
-        Write-Log "Installing Windows Update module..." "Info"
-        Install-Module PSWindowsUpdate -Force -SkipPublisherCheck 
-    }
+    if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -SkipPublisherCheck }
     Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false
-    Write-Log "Windows Update cycle complete." "Success"
+    Write-Log "Update cycle complete." "Success"
 }
 New-Tweak "Storage Sweep" "ReTrim SSD and clear system temp files." { 
     Write-Log "Optimizing storage..." "Warning"; Optimize-Volume -DriveLetter C -ReTrim; cleanmgr /sagerun:1; Write-Log "Cleanup complete." "Success" 
 }
 
-New-Section "Performance & Net"
-New-Tweak "Gaming Mode" "Ultimate Power & Low Latency Menu." { 
+New-Section "Performance Tuning"
+New-Tweak "Gaming Mode" "Ultimate Power & Low Latency UI Menu." { 
     powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 | Out-Null
     Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuShowDelay" -Value 0
-    Write-Log "Performance profile active." "Success"
+    Write-Log "Ultimate Performance profile active." "Success"
 }
-New-Tweak "TCP Accelerator" "Tuning TCP/IP global stack for LAN." { 
+New-Tweak "CPU Lasso" "Priority boost for active foreground apps." { 
+    reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f | Out-Null
+    Write-Log "CPU Thread scheduling optimized." "Success"
+}
+New-Tweak "Kernel I/O Fix" "Disable NTFS 8.3 names & Last Access." { 
+    fsutil behavior set disable8dot3 1; fsutil behavior set disablelastaccess 1
+    Write-Log "Kernel file-system overhead reduced." "Success"
+}
+
+New-Section "Networking & DNS"
+New-Tweak "TCP Accelerator" "Tuning TCP/IP global stack for LAN/WAN." { 
     netsh int tcp set global autotuninglevel=normal; netsh int tcp set global rss=enabled; netsh int tcp set global fastopen=enabled
-    Write-Log "Network stack optimized." "Success"
+    Write-Log "TCP stack tuned for high throughput." "Success"
 }
 New-Tweak "Cloudflare DNS" "Forces 1.1.1.1 on all active adapters." { 
     Write-Log "Propagating Cloudflare DNS..." "Warning"
@@ -211,40 +230,43 @@ New-Tweak "Cloudflare DNS" "Forces 1.1.1.1 on all active adapters." {
     }
     Write-Log "DNS propagation complete." "Success"
 }
-
-New-Section "Power & Persistence"
-New-Tweak "Kill Hibernation" "Disables Hibernation to free space (GBs)." { 
-    powercfg -h off; Write-Log "Hibernation disabled and file deleted." "Success" 
-}
-New-Tweak "Never Sleep" "Prevents LAN timeout during long tasks." { 
-    powercfg -change -standby-timeout-ac 0; powercfg -change -monitor-timeout-ac 0
-    Write-Log "Power timeouts set to Infinity (AC)." "Success" 
-}
-New-Tweak "Fast Start Toggle" "Disable Fast Startup for clean reboots." { 
-    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
-    Write-Log "Fast Startup disabled." "Success" 
-}
-
-New-Section "Advanced & Privacy"
 New-Tweak "DB LAN Fix" "SMB/Oplocks for MS Access stability." { 
     Write-Log "Applying database LAN patch..." "Warning"
     Set-SmbClientConfiguration -EnableSecuritySignature $false -Force
     Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name "EnableOplocks" -Value 0
     Write-Log "Database environment hardened." "Success"
 }
-New-Tweak "OEM Debloat" "Nukes TikTok, Disney, Meta, etc." { 
-    Write-Log "Debloating Start Menu..." "Warning"
-    $Apps = @("*TikTok*", "*Instagram*", "*Facebook*", "*Disney*", "*PrimeVideo*")
-    foreach ($a in $Apps) { Get-AppxPackage $a | Remove-AppxPackage -ErrorAction SilentlyContinue }
-    Write-Log "Bloatware purged." "Success"
+
+New-Section "Power & Privacy"
+New-Tweak "Kill Hibernation" "Disables Hibernation to free space (GBs)." { 
+    powercfg -h off; Write-Log "Hibernation disabled." "Success" 
 }
-New-Tweak "Recall Nuclear" "Total removal of AI Recall feature." { 
-    Write-Log "Removing Recall components..." "Warning"
-    Disable-WindowsOptionalFeature -Online -FeatureName "Recall" -Remove -NoRestart
-    Write-Log "AI Tracking feature removed." "Success"
+New-Tweak "Never Sleep" "Prevents LAN timeout during long tasks." { 
+    powercfg -change -standby-timeout-ac 0; powercfg -change -monitor-timeout-ac 0
+    Write-Log "AC Power timeouts removed." "Success" 
+}
+New-Tweak "Fast Start Off" "Disable Fast Startup for clean reboots." { 
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
+    Write-Log "Hybrid shutdown disabled." "Success" 
 }
 
-# --- [Resize/Drag Loop] ---
+New-Section "System Hardening"
+New-Tweak "OEM Debloat" "Nukes TikTok, Disney, Meta, and Bloat." { 
+    $Apps = @("*TikTok*", "*Instagram*", "*Facebook*", "*Disney*", "*PrimeVideo*")
+    foreach ($a in $Apps) { Get-AppxPackage $a | Remove-AppxPackage -ErrorAction SilentlyContinue }
+    Write-Log "System bloatware purged." "Success"
+}
+New-Tweak "Recall Nuclear" "Total removal of AI Recall feature." { 
+    Write-Log "Nuking Recall binaries..." "Warning"
+    Disable-WindowsOptionalFeature -Online -FeatureName "Recall" -Remove -NoRestart
+    Write-Log "AI Tracking removed." "Success"
+}
+New-Tweak "Service Clean" "Disable Telemetry & Tracking services." { 
+    Get-Service -Name "DiagTrack", "dmwappushservice" | Stop-Service -PassThru | Set-Service -StartupType Disabled
+    Write-Log "Privacy services hardened." "Success"
+}
+
+# --- [Resize/Drag Logic] ---
 $global:Dragging = $false; $global:Resizing = $false; $global:MousePos = New-Object System.Drawing.Point
 $Grip = New-Object System.Windows.Forms.Panel -Property @{Size=New-Object System.Drawing.Size(20,20); Cursor="SizeNWSE"; Anchor="Bottom,Right"}
 $Grip.Location = New-Object System.Drawing.Point(($Form.Width - 20), ($Form.Height - 20))
@@ -267,7 +289,7 @@ $DragTimer.Add_Tick({
     if ($global:Resizing) {
         $CP = [System.Windows.Forms.Cursor]::Position
         $NewWidth = $CP.X - $Form.Left; $NewHeight = $CP.Y - $Form.Top
-        if ($NewWidth -ge 1000 -and $NewHeight -ge 750) { $Form.Size = New-Object System.Drawing.Size($NewWidth, $NewHeight) }
+        if ($NewWidth -ge 1100 -and $NewHeight -ge 850) { $Form.Size = New-Object System.Drawing.Size($NewWidth, $NewHeight) }
     }
 })
 
