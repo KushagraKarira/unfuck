@@ -35,8 +35,12 @@ $Form.StartPosition   = "CenterScreen"
 $Form.FormBorderStyle = "None"
 $Form.MinimumSize     = New-Object System.Drawing.Size(1100, 850)
 
-$prop = $Form.GetType().GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance, NonPublic")
-if ($prop) { $prop.SetValue($Form, $true, $null) }
+# FIX: Bulletproof DoubleBuffering using explicit BindingFlags enumeration
+try {
+    $bf = [System.Reflection.BindingFlags]::Instance -bor [System.Reflection.BindingFlags]::NonPublic
+    $prop = $Form.GetType().GetProperty("DoubleBuffered", $bf)
+    if ($prop) { $prop.SetValue($Form, $true, $null) }
+} catch {}
 
 # --- [Header: Window Controls & Device Info] ---
 $Header = New-Object System.Windows.Forms.Panel -Property @{Dock="Top"; Height=85; BackColor=$script:Theme.Header}
@@ -49,9 +53,12 @@ $TitleLbl = New-Object System.Windows.Forms.Label -Property @{
 }
 $Header.Controls.Add($TitleLbl)
 
-# Robust IP Fetching
-$LocalIP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -eq 'Dhcp' -or $_.PrefixOrigin -eq 'Manual' } | Select-Object -First 1).IPAddress
-if (-not $LocalIP) { $LocalIP = "Scanning..." }
+# FIX: Error-resistant IP Discovery
+$LocalIP = "Searching..."
+try {
+    $ipObj = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -match 'Dhcp|Manual' -and $_.InterfaceAlias -notmatch 'Loopback|Virtual' } | Select-Object -First 1
+    if ($ipObj) { $LocalIP = $ipObj.IPAddress } else { $LocalIP = "No LAN" }
+} catch { $LocalIP = "Scanning..." }
 
 $OS = (Get-CimInstance Win32_OperatingSystem)
 $SysInfoLbl = New-Object System.Windows.Forms.Label -Property @{
@@ -65,7 +72,7 @@ $Header.Controls.Add($SysInfoLbl)
 $UptimeLbl = New-Object System.Windows.Forms.Label -Property @{
     Location  = New-Object System.Drawing.Point(850, 45); Size = New-Object System.Drawing.Size(200, 25)
     ForeColor = $script:Theme.AccentGlow; Font = New-Object System.Drawing.Font($GlobalFont, 8, [System.Drawing.FontStyle]::Bold)
-    TextAlign = "TopRight"; Anchor = "Top, Right"
+    TextAlign = "TopRight"; Anchor = [System.Windows.Forms.AnchorStyles]"Top, Right"
 }
 $Header.Controls.Add($UptimeLbl)
 
@@ -106,13 +113,12 @@ $LogBox = New-Object System.Windows.Forms.RichTextBox -Property @{
 }
 $LogContainer.Controls.Add($LogBox)
 
-# Mini Terminal Clear Button
 $BtnClearLog = New-Object System.Windows.Forms.Button -Property @{
     Text = "CLEAR"; Size = New-Object System.Drawing.Size(60, 22); 
-    Location = New-Object System.Drawing.Point(1160, 10); FlatStyle = "Flat"; 
-    BackColor = $script:Theme.Header; ForeColor = $script:Theme.TextMuted;
-    Font = New-Object System.Drawing.Font($GlobalFont, 7); Anchor = "Bottom, Right"
+    FlatStyle = "Flat"; BackColor = $script:Theme.Header; ForeColor = $script:Theme.TextMuted;
+    Font = New-Object System.Drawing.Font($GlobalFont, 7); Anchor = [System.Windows.Forms.AnchorStyles]"Bottom, Right"
 }
+$BtnClearLog.Location = New-Object System.Drawing.Point(1160, 10)
 $BtnClearLog.FlatAppearance.BorderSize = 0
 $BtnClearLog.Add_Click({ $LogBox.Clear() })
 $LogContainer.Controls.Add($BtnClearLog)
@@ -138,11 +144,8 @@ $global:LastY = 20
 $global:Col = 0
 
 function New-Section ($Title) {
-    if ($global:Col -ne 0) {
-        $global:LastY += 140
-        $global:Col = 0
-    }
-    
+    if ($global:Col -ne 0) { $global:LastY += 140 }
+    $global:Col = 0
     $L = New-Object System.Windows.Forms.Label -Property @{
         Text = $Title.ToUpper(); Location = New-Object System.Drawing.Point(35, $global:LastY);
         Size = New-Object System.Drawing.Size(900, 30); ForeColor = $script:Theme.TextMuted;
@@ -158,7 +161,6 @@ function New-Tweak ($Title, $Desc, $Action) {
         Size = New-Object System.Drawing.Size(305, 125); BackColor = $script:Theme.Card;
         Location = New-Object System.Drawing.Point($X, $global:LastY)
     }
-    
     $B = New-Object System.Windows.Forms.Button -Property @{
         Text = $Title; Dock = "Top"; Height = 65; FlatStyle = "Flat"; ForeColor = $script:Theme.TextMain; 
         Font = New-Object System.Drawing.Font($GlobalFont, 10, [System.Drawing.FontStyle]::Bold); TextAlign = "MiddleLeft";
@@ -168,109 +170,100 @@ function New-Tweak ($Title, $Desc, $Action) {
     $B.Add_MouseEnter({ $this.Parent.BackColor = $script:Theme.CardHover; $this.ForeColor = $script:Theme.AccentGlow })
     $B.Add_MouseLeave({ $this.Parent.BackColor = $script:Theme.Card; $this.ForeColor = $script:Theme.TextMain })
     $B.Add_Click($Action)
-    
     $L = New-Object System.Windows.Forms.Label -Property @{
         Text = $Desc; Dock = "Bottom"; Height = 55; ForeColor = $script:Theme.TextMuted;
         Font = New-Object System.Drawing.Font($GlobalFont, 8); Padding = New-Object System.Windows.Forms.Padding(15, 0, 10, 0)
     }
     $P.Controls.AddRange(@($L, $B))
     $script:DashView.Controls.Add($P)
-    
     $global:Col++
-    if ($global:Col -eq 3) {
-        $global:Col = 0
-        $global:LastY += 140
-    }
+    if ($global:Col -eq 3) { $global:Col = 0; $global:LastY += 140 }
 }
 
-# --- [Populate Tweaks] ---
-
+# --- [TWEAK POPULATION] ---
 New-Section "Maintenance & Repair"
-New-Tweak "Deep Repair" "Executes DISM / SFC restoration cycle." { 
+New-Tweak "Deep Repair" "DISM / SFC restoration cycle." { 
     Write-Log "Repair started..." "Warning"; sfc /scannow; dism /online /cleanup-image /restorehealth; Write-Log "Integrity verified." "Success" 
 }
 New-Tweak "Software Sync" "Upgrades all installed Winget packages." { 
-    Write-Log "Syncing packages..." "Warning"; winget upgrade --all --silent; Write-Log "Apps synced." "Success" 
+    Write-Log "Syncing..." "Warning"; winget upgrade --all --silent; Write-Log "Apps synced." "Success" 
 }
-New-Tweak "OS Patching" "Force check and install Windows Updates." { 
-    Write-Log "Checking for Windows Updates..." "Warning"
+New-Tweak "OS Patching" "Force install Windows Updates." { 
+    Write-Log "Checking for Updates..." "Warning"
     if (-not (Get-Module -ListAvailable PSWindowsUpdate)) { Install-Module PSWindowsUpdate -Force -SkipPublisherCheck }
-    Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false
-    Write-Log "Update cycle complete." "Success"
+    Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false; Write-Log "Update cycle complete." "Success"
 }
-New-Tweak "Storage Sweep" "ReTrim SSD and clear system temp files." { 
+New-Tweak "Storage Sweep" "ReTrim SSD and clear temp files." { 
     Write-Log "Optimizing storage..." "Warning"; Optimize-Volume -DriveLetter C -ReTrim; cleanmgr /sagerun:1; Write-Log "Cleanup complete." "Success" 
 }
 
-New-Section "Performance Tuning"
-New-Tweak "Gaming Mode" "Ultimate Power & Low Latency UI Menu." { 
+New-Section "System Performance"
+New-Tweak "Gaming Mode" "Ultimate Power & Low Latency UI." { 
     powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 | Out-Null
     Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "MenuShowDelay" -Value 0
-    Write-Log "Ultimate Performance profile active." "Success"
+    Write-Log "Performance profile active." "Success"
 }
-New-Tweak "CPU Lasso" "Priority boost for active foreground apps." { 
+New-Tweak "Visual Boost" "Disable Animations & Transparency." { 
+    reg add "HKCU\Control Panel\Desktop" /v UserPreferencesMask /t REG_BINARY /d 9012038010000000 /f | Out-Null
+    reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f | Out-Null
+    Write-Log "Visual effects minimized for speed." "Success"
+}
+New-Tweak "CPU Lasso" "Priority boost for foreground apps." { 
     reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options" /v "CpuPriorityClass" /t REG_DWORD /d 3 /f | Out-Null
-    Write-Log "CPU Thread scheduling optimized." "Success"
-}
-New-Tweak "Kernel I/O Fix" "Disable NTFS 8.3 names & Last Access." { 
-    fsutil behavior set disable8dot3 1; fsutil behavior set disablelastaccess 1
-    Write-Log "Kernel file-system overhead reduced." "Success"
+    Write-Log "CPU Threading optimized." "Success"
 }
 
-New-Section "Networking & DNS"
-New-Tweak "TCP Accelerator" "Tuning TCP/IP global stack for LAN/WAN." { 
-    netsh int tcp set global autotuninglevel=normal; netsh int tcp set global rss=enabled; netsh int tcp set global fastopen=enabled
-    Write-Log "TCP stack tuned for high throughput." "Success"
+New-Section "Networking & Connectivity"
+New-Tweak "TCP Accelerator" "Tuning TCP/IP global stack." { 
+    netsh int tcp set global autotuninglevel=normal; netsh int tcp set global rss=enabled
+    Write-Log "TCP stack optimized." "Success"
 }
-New-Tweak "Cloudflare DNS" "Forces 1.1.1.1 on all active adapters." { 
-    Write-Log "Propagating Cloudflare DNS..." "Warning"
+New-Tweak "Cloudflare DNS" "Forces 1.1.1.1 on all adapters." { 
     Get-NetAdapter | Where { $_.Status -eq "Up" } | ForEach {
         Set-DnsClientServerAddress -InterfaceAlias $_.Name -ServerAddresses ("1.1.1.1", "1.0.0.1")
         Set-DnsClientServerAddress -InterfaceAlias $_.Name -ServerAddresses ("2606:4700:4700::1111", "2606:4700:4700::1001") -AddressFamily IPv6
     }
-    Write-Log "DNS propagation complete." "Success"
+    Write-Log "Cloudflare DNS applied." "Success"
 }
-New-Tweak "DB LAN Fix" "SMB/Oplocks for MS Access stability." { 
-    Write-Log "Applying database LAN patch..." "Warning"
+New-Tweak "DB LAN Fix" "SMB/Oplocks for DB stability." { 
     Set-SmbClientConfiguration -EnableSecuritySignature $false -Force
     Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name "EnableOplocks" -Value 0
-    Write-Log "Database environment hardened." "Success"
+    Write-Log "Database LAN hardened." "Success"
 }
 
-New-Section "Power & Privacy"
-New-Tweak "Kill Hibernation" "Disables Hibernation to free space (GBs)." { 
-    powercfg -h off; Write-Log "Hibernation disabled." "Success" 
-}
-New-Tweak "Never Sleep" "Prevents LAN timeout during long tasks." { 
+New-Section "Power & Hardware"
+New-Tweak "Kill Hibernation" "Disables Hibernation to free space." { powercfg -h off; Write-Log "Hibernation disabled." "Success" }
+New-Tweak "Never Sleep" "Prevents LAN timeout on AC power." { 
     powercfg -change -standby-timeout-ac 0; powercfg -change -monitor-timeout-ac 0
     Write-Log "AC Power timeouts removed." "Success" 
 }
-New-Tweak "Fast Start Off" "Disable Fast Startup for clean reboots." { 
-    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
-    Write-Log "Hybrid shutdown disabled." "Success" 
+New-Tweak "Battery Health" "Generate Battery Diagnostic Report." { 
+    $Path = "$env:USERPROFILE\Desktop\BatteryReport.html"
+    powercfg /batteryreport /output $Path; Write-Log "Report saved to Desktop." "Success" 
 }
 
-New-Section "System Hardening"
-New-Tweak "OEM Debloat" "Nukes TikTok, Disney, Meta, and Bloat." { 
+New-Section "Admin & Privacy"
+New-Tweak "Print Fixer" "Reset Spooler & Clear Queue." { 
+    Stop-Service Spooler -Force; Remove-Item "$env:SystemRoot\System32\Spool\Printers\*" -Force; Start-Service Spooler
+    Write-Log "Printer services restored." "Success"
+}
+New-Tweak "OEM Debloat" "Nukes TikTok, Disney, Meta, etc." { 
     $Apps = @("*TikTok*", "*Instagram*", "*Facebook*", "*Disney*", "*PrimeVideo*")
     foreach ($a in $Apps) { Get-AppxPackage $a | Remove-AppxPackage -ErrorAction SilentlyContinue }
-    Write-Log "System bloatware purged." "Success"
+    Write-Log "Bloatware purged." "Success"
 }
 New-Tweak "Recall Nuclear" "Total removal of AI Recall feature." { 
-    Write-Log "Nuking Recall binaries..." "Warning"
     Disable-WindowsOptionalFeature -Online -FeatureName "Recall" -Remove -NoRestart
     Write-Log "AI Tracking removed." "Success"
-}
-New-Tweak "Service Clean" "Disable Telemetry & Tracking services." { 
-    Get-Service -Name "DiagTrack", "dmwappushservice" | Stop-Service -PassThru | Set-Service -StartupType Disabled
-    Write-Log "Privacy services hardened." "Success"
 }
 
 # --- [Resize/Drag Logic] ---
 $global:Dragging = $false; $global:Resizing = $false; $global:MousePos = New-Object System.Drawing.Point
-$Grip = New-Object System.Windows.Forms.Panel -Property @{Size=New-Object System.Drawing.Size(20,20); Cursor="SizeNWSE"; Anchor="Bottom,Right"}
-$Grip.Location = New-Object System.Drawing.Point(($Form.Width - 20), ($Form.Height - 20))
+$Grip = New-Object System.Windows.Forms.Panel -Property @{Size=New-Object System.Drawing.Size(20,20); Cursor="SizeNWSE"}
+$Grip.Anchor = [System.Windows.Forms.AnchorStyles]"Bottom, Right"
+$Grip.Location = New-Object System.Drawing.Point(([int]$Form.Width - 20), ([int]$Form.Height - 20))
 $Form.Controls.Add($Grip); $Grip.BringToFront()
+
 $Grip.Add_MouseDown({ $global:Resizing = $true; $global:MousePos = [System.Windows.Forms.Cursor]::Position })
 $Grip.Add_MouseUp({ $global:Resizing = $false })
 $Header.Add_MouseDown({ $global:Dragging = $true; $global:MousePos = $Form.PointToClient([System.Windows.Forms.Cursor]::Position) })
@@ -288,8 +281,8 @@ $DragTimer.Add_Tick({
     if ($global:Dragging) { $Form.Location = [System.Drawing.Point]::Subtract([System.Windows.Forms.Cursor]::Position, $global:MousePos) }
     if ($global:Resizing) {
         $CP = [System.Windows.Forms.Cursor]::Position
-        $NewWidth = $CP.X - $Form.Left; $NewHeight = $CP.Y - $Form.Top
-        if ($NewWidth -ge 1100 -and $NewHeight -ge 850) { $Form.Size = New-Object System.Drawing.Size($NewWidth, $NewHeight) }
+        $NewWidth = [int]($CP.X - $Form.Left); $NewHeight = [int]($CP.Y - $Form.Top)
+        if ($NewWidth -ge 1100 -and $NewHeight -ge 900) { $Form.Size = New-Object System.Drawing.Size($NewWidth, $NewHeight) }
     }
 })
 
